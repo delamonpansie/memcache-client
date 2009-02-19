@@ -113,6 +113,7 @@ class TestMemCache < Test::Unit::TestCase
 
   def setup
     @cache = MemCache.new 'localhost:1', :namespace => 'my_namespace'
+    @raw_cache = MemCache.new 'localhost:1', :namespace => 'my_namespace', :raw => true
   end
 
   def test_performance
@@ -236,7 +237,7 @@ class TestMemCache < Test::Unit::TestCase
   end
 
   def test_cache_get
-    server = util_setup_fake_server
+    server = util_setup_fake_server @cache
 
     assert_equal "\004\b\"\0170123456789",
                  @cache.cache_get(server, 'my_namespace:key')
@@ -246,7 +247,7 @@ class TestMemCache < Test::Unit::TestCase
   end
 
   def test_cache_get_EOF
-    server = util_setup_fake_server
+    server = util_setup_fake_server @cache
     server.socket.data.string = ''
 
     e = assert_raise IndexError do
@@ -288,7 +289,7 @@ class TestMemCache < Test::Unit::TestCase
   end
 
   def test_cache_get_multi
-    server = util_setup_fake_server
+    server = util_setup_fake_server @cache
     server.socket.data.write "VALUE foo 0 7\r\n"
     server.socket.data.write "\004\b\"\bfoo\r\n"
     server.socket.data.write "VALUE bar 0 7\r\n"
@@ -304,7 +305,7 @@ class TestMemCache < Test::Unit::TestCase
   end
 
   def test_cache_get_multi_EOF
-    server = util_setup_fake_server
+    server = util_setup_fake_server @cache
     server.socket.data.string = ''
 
     e = assert_raise IndexError do
@@ -465,7 +466,7 @@ class TestMemCache < Test::Unit::TestCase
   end
 
   def test_get
-    util_setup_fake_server
+    util_setup_fake_server @cache
 
     value = @cache.get 'key'
 
@@ -475,11 +476,22 @@ class TestMemCache < Test::Unit::TestCase
     assert_equal '0123456789', value
   end
 
+  def test_get_noraw
+    util_setup_fake_server @raw_cache
+
+    value = @raw_cache.get 'key', false
+
+    assert_equal "get my_namespace:key\r\n",
+                 @raw_cache.servers.first.socket.written.string
+
+    assert_equal '0123456789', value
+  end
+
   def test_get_bad_key
-    util_setup_fake_server
+    util_setup_fake_server @cache
     assert_raise ArgumentError do @cache.get 'k y' end
 
-    util_setup_fake_server
+    util_setup_fake_server @cache
     assert_raise ArgumentError do @cache.get 'k' * 250 end
   end
 
@@ -553,6 +565,28 @@ class TestMemCache < Test::Unit::TestCase
     assert_equal expected.sort, values.sort
   end
 
+  def test_get_multi_raw
+    server = FakeServer.new
+    server.socket.data.write "VALUE my_namespace:key 0 10\r\n"
+    server.socket.data.write "0123456789\r\n"
+    server.socket.data.write "VALUE my_namespace:keyb 0 10\r\n"
+    server.socket.data.write "9876543210\r\n"
+    server.socket.data.write "END\r\n"
+    server.socket.data.rewind
+
+    @raw_cache.servers = []
+    @raw_cache.servers << server
+
+    values = @raw_cache.get_multi 'key', 'keyb'
+
+    assert_equal "get my_namespace:key my_namespace:keyb\r\n",
+                 server.socket.written.string
+
+    expected = { 'key' => '0123456789', 'keyb' => '9876543210' }
+
+    assert_equal expected.sort, values.sort
+  end
+  
   def test_get_raw
     server = FakeServer.new
     server.socket.data.write "VALUE my_namespace:key 0 10\r\n"
@@ -568,6 +602,25 @@ class TestMemCache < Test::Unit::TestCase
 
     assert_equal "get my_namespace:key\r\n",
                  @cache.servers.first.socket.written.string
+
+    assert_equal '0123456789', value
+  end
+
+  def test_get_raw2
+    server = FakeServer.new
+    server.socket.data.write "VALUE my_namespace:key 0 10\r\n"
+    server.socket.data.write "0123456789\r\n"
+    server.socket.data.write "END\r\n"
+    server.socket.data.rewind
+
+    @raw_cache.servers = []
+    @raw_cache.servers << server
+
+
+    value = @raw_cache.get 'key'
+
+    assert_equal "get my_namespace:key\r\n",
+                 @raw_cache.servers.first.socket.written.string
 
     assert_equal '0123456789', value
   end
@@ -722,6 +775,19 @@ class TestMemCache < Test::Unit::TestCase
     assert_equal expected, server.socket.written.string
   end
 
+  def test_set_raw2
+    server = FakeServer.new
+    server.socket.data.write "STORED\r\n"
+    server.socket.data.rewind
+    @raw_cache.servers = []
+    @raw_cache.servers << server
+
+    @raw_cache.set 'key', 'value', 0
+
+    expected = "set my_namespace:key 0 0 5\r\nvalue\r\n"
+    assert_equal expected, server.socket.written.string
+  end
+  
   def test_set_readonly
     cache = MemCache.new :readonly => true
 
@@ -796,10 +862,10 @@ class TestMemCache < Test::Unit::TestCase
     server = FakeServer.new
     server.socket.data.write "STORED\r\n"
     server.socket.data.rewind
-    @cache.servers = []
-    @cache.servers << server
+    @raw_cache.servers = []
+    @raw_cache.servers << server
 
-    @cache.add 'key', 'value', 0, true
+    @raw_cache.add 'key', 'value', 0
 
     expected = "add my_namespace:key 0 0 5\r\nvalue\r\n"
     assert_equal expected, server.socket.written.string
@@ -809,10 +875,10 @@ class TestMemCache < Test::Unit::TestCase
     server = FakeServer.new
     server.socket.data.write "STORED\r\n"
     server.socket.data.rewind
-    @cache.servers = []
-    @cache.servers << server
+    @raw_cache.servers = []
+    @raw_cache.servers << server
 
-    @cache.add 'key', 12, 0, true
+    @raw_cache.add 'key', 12, 0
 
     expected = "add my_namespace:key 0 0 2\r\n12\r\n"
     assert_equal expected, server.socket.written.string
@@ -949,15 +1015,15 @@ class TestMemCache < Test::Unit::TestCase
     assert_match /test value/, output
   end
 
-  def util_setup_fake_server
+  def util_setup_fake_server(cache)
     server = FakeServer.new
     server.socket.data.write "VALUE my_namespace:key 0 14\r\n"
     server.socket.data.write "\004\b\"\0170123456789\r\n"
     server.socket.data.write "END\r\n"
     server.socket.data.rewind
 
-    @cache.servers = []
-    @cache.servers << server
+    cache.servers = []
+    cache.servers << server
 
     return server
   end

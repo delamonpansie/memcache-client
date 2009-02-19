@@ -17,7 +17,7 @@ class MemCache
   ##
   # The version of MemCache you are using.
 
-  VERSION = '1.6.4'
+  VERSION = '1.6.4-delamonpansie-1'
 
   ##
   # Default options for the cache object.
@@ -29,6 +29,7 @@ class MemCache
     :failover    => true,
     :timeout     => 0.5,
     :logger      => nil,
+    :raw         => false,
   }
 
   ##
@@ -87,6 +88,7 @@ class MemCache
   #   [:timeout]     Time to use as the socket read timeout.  Defaults to 0.25 sec,
   #                  set to nil to disable timeouts (this is a major performance penalty in Ruby 1.8).
   #   [:logger]      Logger to use for info/debug output, defaults to nil
+  #   [:raw]         If true, the value(s) will be returned unaltered.
   # Other options are ignored.
 
   def initialize(*args)
@@ -116,11 +118,10 @@ class MemCache
     @timeout     = opts[:timeout]
     @failover    = opts[:failover]
     @logger      = opts[:logger]
+    @raw         = opts[:raw]
     @mutex       = Mutex.new if @multithread
 
     logger.info { "memcache-client #{VERSION} #{Array(servers).inspect}" } if logger
-
-    Thread.current[:memcache_client] = self.object_id if !@multithread
 
     self.servers = servers
   end
@@ -129,8 +130,8 @@ class MemCache
   # Returns a string representation of the cache object.
 
   def inspect
-    "<MemCache: %d servers, ns: %p, ro: %p>" %
-      [@servers.length, @namespace, @readonly]
+    "<MemCache: %d servers, ns: %p, ro: %p, raw: %p>" %
+      [@servers.length, @namespace, @readonly, @raw]
   end
 
   ##
@@ -195,12 +196,12 @@ class MemCache
   # Retrieves +key+ from memcache.  If +raw+ is false, the value will be
   # unmarshalled.
 
-  def get(key, raw = false)
+  def get(key, raw = nil)
     with_server(key) do |server, cache_key|
       value = cache_get server, cache_key
       logger.debug { "GET #{key} from #{server.inspect}: #{value ? value.to_s.size : 'nil'}" } if logger
       return nil if value.nil?
-      value = Marshal.load value unless raw
+      value = Marshal.load value unless (raw == nil && @raw) || raw
       return value
     end
   rescue TypeError => err
@@ -245,7 +246,7 @@ class MemCache
       begin
         values = cache_get_multi server, keys_for_server_str
         values.each do |key, value|
-          results[cache_keys[key]] = Marshal.load value
+          results[cache_keys[key]] = if @raw then value else Marshal.load value end
         end
       rescue IndexError => e
         # Ignore this server and try the others
@@ -281,11 +282,11 @@ class MemCache
 
   ONE_MB = 1024 * 1024
 
-  def set(key, value, expiry = 0, raw = false)
+  def set(key, value, expiry = 0, raw = nil)
     raise MemCacheError, "Update of readonly cache" if @readonly
     with_server(key) do |server, cache_key|
 
-      value = Marshal.dump value unless raw
+      value = Marshal.dump value unless  (raw == nil && @raw) || raw
       logger.debug { "SET #{key} to #{server.inspect}: #{value ? value.to_s.size : 'nil'}" } if logger
 
       data = value.to_s
@@ -316,10 +317,10 @@ class MemCache
   # Readers should call this method in the event of a cache miss, not
   # MemCache#set or MemCache#[]=.
 
-  def add(key, value, expiry = 0, raw = false)
+  def add(key, value, expiry = 0, raw = nil)
     raise MemCacheError, "Update of readonly cache" if @readonly
     with_server(key) do |server, cache_key|
-      value = Marshal.dump value unless raw
+      value = Marshal.dump value unless (raw == nil && @raw) || raw
       logger.debug { "ADD #{key} to #{server}: #{value ? value.to_s.size : 'nil'}" } if logger
       command = "add #{cache_key} 0 #{expiry} #{value.to_s.size}\r\n#{value}\r\n"
 
@@ -608,7 +609,6 @@ class MemCache
   # failures (but does still apply to unexpectedly lost connections etc.).
 
   def with_socket_management(server, &block)
-    check_multithread_status!
 
     @mutex.lock if @multithread
     retried = false
@@ -699,18 +699,6 @@ class MemCache
 
   def entry_count_for(server, total_servers, total_weight)
     ((total_servers * Continuum::POINTS_PER_SERVER * server.weight) / Float(total_weight)).floor
-  end
-
-  def check_multithread_status!
-    return if @multithread
-
-    if Thread.current[:memcache_client] != self.object_id
-      raise MemCacheError, <<-EOM
-        You are accessing this memcache-client instance from multiple threads but have not enabled multithread support.
-        Normally:  MemCache.new(['localhost:11211'], :multithread => true)
-        In Rails:  config.cache_store = [:mem_cache_store, 'localhost:11211', { :multithread => true }]
-      EOM
-    end
   end
 
   ##
