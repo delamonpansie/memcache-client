@@ -169,7 +169,23 @@ class TestMemCache < Test::Unit::TestCase
       assert same_count > 700
     end
   end
-  
+
+
+    def test_modulo_hashing
+      requirement(self.respond_to?(:flexmock), 'Flexmock is required to run this test') do
+
+        cache = MemCache.new 'localhost:1', :namespace => 'my_namespace', :persistent_hashing => false
+
+        flexmock(MemCache::Server).new_instances.should_receive(:alive?).and_return(true)
+
+        cache.servers = ['mike1', 'mike2', 'mike3']
+
+        assert_equal cache.servers[2], cache.get_server_for_key('a')
+        cache.servers[2].define_singleton_method(:alive?) { false }
+        assert_equal cache.servers[1], cache.get_server_for_key('a')
+    end
+  end
+
   def test_get_multi_with_server_failure
     @cache = MemCache.new 'localhost:1', :namespace => 'my_namespace', :logger => nil #Logger.new(STDOUT)
     s1 = FakeServer.new

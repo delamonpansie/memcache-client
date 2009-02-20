@@ -15,19 +15,20 @@ class MemCache
   ##
   # The version of MemCache you are using.
 
-  VERSION = '1.6.4-delamonpansie-1'
+  VERSION = '1.6.4.2'
 
   ##
   # Default options for the cache object.
 
   DEFAULT_OPTIONS = {
-    :namespace   => nil,
-    :readonly    => false,
-    :multithread => false,
-    :failover    => true,
-    :timeout     => 0.5,
-    :logger      => nil,
-    :raw         => false,
+    :namespace          => nil,
+    :readonly           => false,
+    :multithread        => false,
+    :failover           => true,
+    :timeout            => 0.5,
+    :logger             => nil,
+    :raw                => false,
+    :persistent_hashing => true,
   }
 
   ##
@@ -110,14 +111,15 @@ class MemCache
     end
 
     opts = DEFAULT_OPTIONS.merge opts
-    @namespace   = opts[:namespace]
-    @readonly    = opts[:readonly]
-    @multithread = opts[:multithread]
-    @timeout     = opts[:timeout]
-    @failover    = opts[:failover]
-    @logger      = opts[:logger]
-    @raw         = opts[:raw]
-    @mutex       = Mutex.new if @multithread
+    @namespace          = opts[:namespace]
+    @readonly           = opts[:readonly]
+    @multithread        = opts[:multithread]
+    @timeout            = opts[:timeout]
+    @failover           = opts[:failover]
+    @logger             = opts[:logger]
+    @raw                = opts[:raw]
+    @persistent_hashing = opts[:persistent_hashing]
+    @mutex              = Mutex.new if @multithread
 
     logger.info { "memcache-client #{VERSION} #{Array(servers).inspect}" } if logger
 
@@ -171,7 +173,16 @@ class MemCache
     logger.debug { "Servers now: #{@servers.inspect}" } if logger
 
     # There's no point in doing this if there's only one server
-    @continuum = create_continuum_for(@servers) if @servers.size > 1
+    if @servers.size > 1
+      if @persistent_hashing
+        @continuum = create_continuum_for(@servers)
+      else
+        @buckets = []
+        @servers.each do |server|
+          server.weight.times { @buckets.push(server) }
+        end
+      end
+    end
 
     @servers
   end
@@ -479,14 +490,6 @@ class MemCache
   end
 
   ##
-  # Returns an interoperable hash value for +key+.  (I think, docs are
-  # sketchy for down servers).
-
-  def hash_for(key)
-    Zlib.crc32(key)
-  end
-
-  ##
   # Pick a server to handle the request based on a hash of the key.
 
   def get_server_for_key(key, options = {})
@@ -496,16 +499,28 @@ class MemCache
     raise MemCacheError, "No servers available" if @servers.empty?
     return @servers.first if @servers.length == 1
 
-    hkey = hash_for(key)
+    # for unknown reason hashing is different between memcache-client.rb and original Cache::Memcached.pm
 
-    20.times do |try|
-      entryidx = Continuum.binary_search(@continuum, hkey)
-      server = @continuum[entryidx].server
-      return server if server.alive?
-      break unless failover
-      hkey = hash_for "#{try}#{key}"
+    if @persistent_hashing
+      hkey = Zlib.crc32 key
+
+      20.times do |try|
+        entryidx = Continuum.binary_search(@continuum, hkey)
+        server = @continuum[entryidx].server
+        return server if server.alive?
+        break unless failover
+        hkey = Zlib.crc32 "#{try}#{key}"
+      end
+    else
+      hkey = (Zlib.crc32(key) >> 16) & 0x7fff
+
+      20.times do |try|
+        server = @buckets[hkey % @buckets.length]
+        return server if server.alive?
+        hkey += (Zlib.crc32("#{try}#{key}") >> 16) & 0x7fff 
+      end
     end
-    
+
     raise MemCacheError, "No servers available"
   end
 
