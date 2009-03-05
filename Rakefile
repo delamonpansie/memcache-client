@@ -11,6 +11,15 @@ task :install => [:gem] do
 	sh "sudo gem install memcache-client-*.gem"
 end
 
+task :clean do
+	sh "rm -f memcache-client-*.gem"
+end
+
+task :publish => [:clean, :gem, :install] do
+	require 'lib/memcache'
+	sh "rubyforge add_release seattlerb memcache-client #{MemCache::VERSION} memcache-client-#{MemCache::VERSION}.gem"
+end
+
 Rake::RDocTask.new do |rd|
 	rd.main = "README.rdoc"
 	rd.rdoc_files.include("README.rdoc", "lib/**/*.rb")

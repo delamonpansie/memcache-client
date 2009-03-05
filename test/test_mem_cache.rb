@@ -506,6 +506,49 @@ class TestMemCache < Test::Unit::TestCase
     assert_equal '0123456789', value
   end
 
+  def test_fetch_without_a_block
+    server = FakeServer.new
+    server.socket.data.write "END\r\n"
+    server.socket.data.rewind
+
+    @cache.servers = [server]
+
+    flexmock(@cache).should_receive(:get).with('key', false).and_return(nil)
+
+    value = @cache.fetch('key', 1)
+    assert_equal nil, value
+  end
+  
+  def test_fetch_miss
+    server = FakeServer.new
+    server.socket.data.write "END\r\n"
+    server.socket.data.rewind
+
+    @cache.servers = [server]
+
+    flexmock(@cache).should_receive(:get).with('key', false).and_return(nil)
+    flexmock(@cache).should_receive(:add).with('key', 'value', 1, false)
+
+    value = @cache.fetch('key', 1) { 'value' }
+
+    assert_equal 'value', value
+  end
+
+  def test_fetch_hit
+    server = FakeServer.new
+    server.socket.data.write "END\r\n"
+    server.socket.data.rewind
+
+    @cache.servers = [server]
+
+    flexmock(@cache).should_receive(:get).with('key', false).and_return('value')
+    flexmock(@cache).should_receive(:add).never
+
+    value = @cache.fetch('key', 1) { raise 'Should not be called.' }
+
+    assert_equal 'value', value
+  end
+
   def test_get_bad_key
     util_setup_fake_server @cache
     assert_raise ArgumentError do @cache.get 'k y' end
@@ -834,6 +877,49 @@ class TestMemCache < Test::Unit::TestCase
     assert_match /object too large for cache/, e.message
   end
 
+  def test_prepend
+    server = FakeServer.new
+    server.socket.data.write "STORED\r\n"
+    server.socket.data.rewind
+    @cache.servers = []
+    @cache.servers << server
+
+    @cache.prepend 'key', 'value'
+    
+    dumped = Marshal.dump('value')
+
+    expected = "prepend my_namespace:key 0 0 5\r\nvalue\r\n"
+    assert_equal expected, server.socket.written.string
+  end
+
+  def test_append
+    server = FakeServer.new
+    server.socket.data.write "STORED\r\n"
+    server.socket.data.rewind
+    @cache.servers = []
+    @cache.servers << server
+
+    @cache.append 'key', 'value'
+    
+    expected = "append my_namespace:key 0 0 5\r\nvalue\r\n"
+    assert_equal expected, server.socket.written.string
+  end
+
+  def test_replace
+    server = FakeServer.new
+    server.socket.data.write "STORED\r\n"
+    server.socket.data.rewind
+    @cache.servers = []
+    @cache.servers << server
+
+    @cache.replace 'key', 'value', 150
+    
+    dumped = Marshal.dump('value')
+
+    expected = "replace my_namespace:key 0 150 #{dumped.length}\r\n#{dumped}\r\n"
+    assert_equal expected, server.socket.written.string
+  end
+
   def test_add
     server = FakeServer.new
     server.socket.data.write "STORED\r\n"
@@ -941,8 +1027,20 @@ class TestMemCache < Test::Unit::TestCase
 
     @cache.flush_all
 
-    expected = "flush_all\r\n"
+    expected = "flush_all 0\r\n"
     @cache.servers.each do |server|
+      assert_equal expected, server.socket.written.string
+    end
+  end
+
+  def test_flush_all_with_delay
+    @cache.servers = []
+    3.times { @cache.servers << FakeServer.new }
+
+    @cache.flush_all(10)
+
+    @cache.servers.each_with_index do |server, idx|
+      expected = "flush_all #{idx*10}\r\n"
       assert_equal expected, server.socket.written.string
     end
   end
@@ -963,7 +1061,7 @@ class TestMemCache < Test::Unit::TestCase
       @cache.flush_all
     end
 
-    assert_match /flush_all\r\n/, socket.written.string
+    assert_match /flush_all 0\r\n/, socket.written.string
   end
 
   def test_stats
@@ -1064,6 +1162,12 @@ class TestMemCache < Test::Unit::TestCase
       cache.flush_all
       workers = []
 
+      cache.set('f', 'zzz')
+      assert_equal "STORED\r\n", (cache.cas('f') do |value|
+        value << 'z'
+      end)
+      assert_equal 'zzzz', cache.get('f')
+
       # Have a bunch of threads perform a bunch of operations at the same time.
       # Verify the result of each operation to ensure the request and response
       # are not intermingled between threads.
@@ -1073,6 +1177,14 @@ class TestMemCache < Test::Unit::TestCase
             cache.set('a', 9)
             cache.set('b', 11)
             cache.add('c', 10, 0, true)
+            cache.set('d', 'a', 100, true)
+            cache.set('e', 'x', 100, true)
+            cache.set('f', 'zzz')
+            assert_not_nil(cache.cas('f') do |value|
+              value << 'z'
+            end)
+            cache.append('d', 'b')
+            cache.prepend('e', 'y')
             assert_equal "NOT_STORED\r\n", cache.add('a', 11)
             assert_equal({ 'a' => 9, 'b' => 11 }, cache.get_multi(['a', 'b']))
             inc = cache.incr('c', 10)
@@ -1080,6 +1192,10 @@ class TestMemCache < Test::Unit::TestCase
             assert inc > 14
             assert cache.decr('c', 5) > 14
             assert_equal 11, cache.get('b')
+            d = cache.get('d', true)
+            assert_match /\Aab+\Z/, d
+            e = cache.get('e', true)
+            assert_match /\Ay+x\Z/, e
           end
         end
       end

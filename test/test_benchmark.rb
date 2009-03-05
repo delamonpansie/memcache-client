@@ -22,6 +22,7 @@ class TestBenchmark < Test::Unit::TestCase
       ['127.0.0.1:11211', 'localhost:11211'],
       {
         :namespace => "namespace",
+#        :no_reply => true,
 #        :timeout => nil,
       }
     ]

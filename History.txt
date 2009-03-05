@@ -1,3 +1,23 @@
+= 1.7.0
+
+* Go through the memcached protocol document and implement any commands not already implemented:
+  - cas
+  - append
+  - prepend
+  - replace
+
+* Add fetch method which provides a method very similar to ActiveSupport::Cache::Store#fetch,
+  basically a wrapper around get and add. (djanowski)
+
+* Implement the flush_all delay parameter, to allow a large memcached farm to be flushed gradually.
+
+* Implement the noreply flag, which tells memcached not to reply in operations which don't
+  need a reply, i.e. set/add/delete/flush_all.
+
+* The only known functionality not implemented anymore is the <flags> parameter to the storage
+  commands.  This would require modification of the API method signatures.  If someone can come
+  up with a cleaner way and implement it, I would be happy to consider including it.
+
 = 1.6.5 (2009-02-27)
 
 * Change memcache-client to multithreaded by default.  The mutex does not add significant
