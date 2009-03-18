@@ -1,10 +1,22 @@
-= 1.7.0
+= 1.7.1
+
+* Performance optimization.  Rely on higher performance operating system socket timeouts for 
+  low-level socket read/writes where possible, instead of the (slower) SystemTimer or (slowest,
+  unreliable) Timeout libraries.
+
+= 1.7.0 (2009-03-08)
 
 * Go through the memcached protocol document and implement any commands not already implemented:
   - cas
   - append
   - prepend
   - replace
+  
+  Append and prepend only work with raw data since it makes no sense to concatenate two Marshalled
+  values together.  The cas functionality should be considered a prototype.  Since I don't have an
+  application which uses +cas+, I'm not sure what semantic sugar the API should provide.  Should it
+  retry if the value was changed?  Should it massage the returned string into true/false?  Feedback
+  would be appreciated.
 
 * Add fetch method which provides a method very similar to ActiveSupport::Cache::Store#fetch,
   basically a wrapper around get and add. (djanowski)
@@ -16,7 +28,7 @@
 
 * The only known functionality not implemented anymore is the <flags> parameter to the storage
   commands.  This would require modification of the API method signatures.  If someone can come
-  up with a cleaner way and implement it, I would be happy to consider including it.
+  up with a clean way to implement it, I would be happy to consider including it.
 
 = 1.6.5 (2009-02-27)
 

@@ -33,7 +33,7 @@ class MemCache
   ##
   # The version of MemCache you are using.
 
-  VERSION = '1.7.0.2'
+  VERSION = '1.7.1.2'
 
   ##
   # Default options for the cache object.
@@ -839,7 +839,7 @@ class MemCache
 
       block.call(socket)
 
-    rescue SocketError, Timeout::Error => err
+    rescue SocketError, Errno::EAGAIN, Timeout::Error => err
       logger.warn { "Socket failure: #{err.message}" } if logger
       server.mark_dead(err)
       handle_error(server, err)
@@ -927,13 +927,6 @@ class MemCache
   class Server
 
     ##
-    # The amount of time to wait to establish a connection with a memcached
-    # server.  If a connection cannot be established within this time limit,
-    # the server will be marked as down.
-
-    CONNECT_TIMEOUT = 0.25
-
-    ##
     # The amount of time to wait before attempting to re-establish a
     # connection with a server that is marked dead.
 
@@ -1016,19 +1009,43 @@ class MemCache
 
       # Attempt to connect if not already connected.
       begin
-        @sock = @timeout ? TCPTimeoutSocket.new(@host, @port, @timeout) : TCPSocket.new(@host, @port)
-
-        if Socket.constants.include? 'TCP_NODELAY' then
-          @sock.setsockopt Socket::IPPROTO_TCP, Socket::TCP_NODELAY, 1
-        end
+        @sock = connect_to(@host, @port, @timeout)
+        @sock.setsockopt Socket::IPPROTO_TCP, Socket::TCP_NODELAY, 1
         @retry  = nil
         @status = 'CONNECTED'
-      rescue SocketError, SystemCallError, IOError, Timeout::Error => err
+      rescue SocketError, SystemCallError, IOError => err
         logger.warn { "Unable to open socket: #{err.class.name}, #{err.message}" } if logger
         mark_dead err
       end
 
       return @sock
+    end
+
+    def connect_to(host, port, timeout=nil)
+      addr = Socket.getaddrinfo(host, nil)
+      sock = Socket.new(Socket.const_get(addr[0][0]), Socket::SOCK_STREAM, 0)
+
+      if timeout
+        secs = Integer(timeout)
+        usecs = Integer((timeout - secs) * 1_000_000)
+        optval = [secs, usecs].pack("l_2")
+        sock.setsockopt Socket::SOL_SOCKET, Socket::SO_RCVTIMEO, optval
+        sock.setsockopt Socket::SOL_SOCKET, Socket::SO_SNDTIMEO, optval
+
+        # Socket timeouts don't work for more complex IO operations
+        # like gets which lay on top of read.  We need to fall back to
+        # the standard Timeout mechanism.
+        sock.instance_eval <<-EOR
+          alias :blocking_gets :gets
+          def gets
+            MemCacheTimer.timeout(#{timeout}) do
+              self.blocking_gets
+            end
+          end
+        EOR
+      end
+      sock.connect(Socket.pack_sockaddr_in(port, addr[0][3]))
+      sock
     end
 
     ##
@@ -1062,51 +1079,6 @@ class MemCache
 
   class MemCacheError < RuntimeError; end
 
-end
-
-# TCPSocket facade class which implements timeouts.
-class TCPTimeoutSocket
-  
-  def initialize(host, port, timeout)
-    MemCacheTimer.timeout(MemCache::Server::CONNECT_TIMEOUT) do
-      @sock = TCPSocket.new(host, port)
-      @len = timeout
-    end
-  end
-  
-  def write(*args)
-    MemCacheTimer.timeout(@len) do
-      @sock.write(*args)
-    end
-  end
-  
-  def gets(*args)
-    MemCacheTimer.timeout(@len) do
-      @sock.gets(*args)
-    end
-  end
-  
-  def read(*args)
-    MemCacheTimer.timeout(@len) do
-      @sock.read(*args)
-    end
-  end
-  
-  def _socket
-    @sock
-  end
-  
-  def method_missing(meth, *args)
-    @sock.__send__(meth, *args)
-  end
-  
-  def closed?
-    @sock.closed?
-  end
-  
-  def close
-    @sock.close
-  end
 end
 
 module Continuum

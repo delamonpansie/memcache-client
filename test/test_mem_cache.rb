@@ -1193,9 +1193,9 @@ class TestMemCache < Test::Unit::TestCase
             assert cache.decr('c', 5) > 14
             assert_equal 11, cache.get('b')
             d = cache.get('d', true)
-            assert_match /\Aab+\Z/, d
+            assert_match /\Aab*\Z/, d
             e = cache.get('e', true)
-            assert_match /\Ay+x\Z/, e
+            assert_match /\Ay*x\Z/, e
           end
         end
       end

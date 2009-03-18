@@ -1,5 +1,5 @@
 HERE = File.dirname(__FILE__)
-$LOAD_PATH << "#{HERE}/../lib/"
+$LOAD_PATH.unshift "#{HERE}/../lib"
 #$LOAD_PATH << "/Library/Ruby/Gems/1.8/gems/activesupport-2.2.2/lib/active_support/vendor/memcache-client-1.5.1"
 
 require 'benchmark'
