@@ -79,3 +79,13 @@ get:ruby:memcache-client         2.160000   2.090000   4.250000 (  3.924613)
 multiget:ruby:memcache-client    1.080000   0.820000   1.900000 (  1.744107)
 missing:ruby:memcache-client     1.330000   1.270000   2.600000 (  2.547597)
 mixed:ruby:memcache-client       3.540000   3.270000   6.810000 (  6.735349)
+
+== 1.7.1, timeout, 1.8.6, raw + gets SystemTimer, native binary search
+                                     user     system      total        real
+set:plain:memcache-client        1.840000   0.450000   2.290000 (  2.651285)
+set:ruby:memcache-client         1.960000   0.460000   2.420000 (  2.712650)
+get:plain:memcache-client        3.180000   0.630000   3.810000 (  4.079930)
+get:ruby:memcache-client         3.290000   0.640000   3.930000 (  4.242648)
+multiget:ruby:memcache-client    1.640000   0.250000   1.890000 (  2.003687)
+missing:ruby:memcache-client     1.940000   0.450000   2.390000 (  2.619675)
+mixed:ruby:memcache-client       5.360000   1.100000   6.460000 (  7.040998)

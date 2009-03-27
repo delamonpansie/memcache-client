@@ -43,3 +43,7 @@ Eric Hodel and the seattle.rb crew.
 Email::        mailto:mperham@gmail.com
 Twitter::      mperham[http://twitter.com/mperham]
 WWW::          http://mikeperham.com
+
+If my work on memcache-client is something you support, please take a moment to
+recommend me at WWR[http://workingwithrails.com/person/10797-mike-perham].  I'm not
+asking for money, just a electronic "thumbs up".
