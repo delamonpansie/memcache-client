@@ -38,8 +38,7 @@ class TestBenchmark < Test::Unit::TestCase
   def test_benchmark
     Benchmark.bm(31) do |x|
     
-      n = 2500
-#      n = 1000
+      n = 200
     
       @m = MemCache.new(*@opts)
       x.report("set:plain:memcache-client") do

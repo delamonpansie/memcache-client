@@ -849,6 +849,37 @@ class TestMemCache < Test::Unit::TestCase
     expected = "set my_namespace:key 0 0 5\r\nvalue\r\n"
     assert_equal expected, server.socket.written.string
   end
+
+  def test_cas
+    requirement(memcached_running?, 'A real memcached server must be running for performance testing') do
+
+      cache = MemCache.new(['localhost:11211'])
+
+      cache.set('cas_key', 'some')
+      result = cache.cas('cas_key') do |value|
+        'new'
+      end
+
+      assert_equal "STORED\r\n", result
+      assert_equal 'new', cache.get('cas_key')
+    end
+  end
+
+  def test_cas_raw
+    requirement(memcached_running?, 'A real memcached server must be running for performance testing') do
+
+      cache = MemCache.new(['localhost:11211'], :raw => true)
+
+      cache.set('cas_key', 'some')
+      result = cache.cas('cas_key') do |value|
+        'new'
+      end
+
+      assert_equal "STORED\r\n", result
+      assert_equal 'new', cache.get('cas_key')
+    end
+  end
+
   
   def test_set_readonly
     cache = MemCache.new :readonly => true

@@ -237,8 +237,8 @@ class MemCache
 
   def get(key, raw = nil)
     with_server(key) do |server, cache_key|
-      logger.debug { "get #{key} from #{server.inspect}: #{value ? value.to_s.size : 'nil'}" } if logger
       value = cache_get server, cache_key
+      logger.debug { "get #{key} from #{server.inspect}: #{value ? value.to_s.size : 'nil'}" } if logger
       return nil if value.nil?
       value = Marshal.load value unless (raw == nil && @raw) || raw
       return value
@@ -346,7 +346,7 @@ class MemCache
     raise MemCacheError, "Update of readonly cache" if @readonly
     with_server(key) do |server, cache_key|
 
-      value = Marshal.dump value unless raw
+      value = Marshal.dump value unless  (raw == nil && @raw) || raw
       data = value.to_s
       logger.debug { "set #{key} to #{server.inspect}: #{data.size}" } if logger
 
@@ -385,18 +385,18 @@ class MemCache
   # +STORED+ if the value was updated successfully
   # +EXISTS+ if the value was updated by someone else since last fetch
 
-  def cas(key, expiry=0, raw=false)
+  def cas(key, expiry=0, raw=nil)
     raise MemCacheError, "Update of readonly cache" if @readonly
     raise MemCacheError, "A block is required" unless block_given?
 
     (value, token) = gets(key, raw)
     return nil unless value
-    updated = yield value
+    value = yield value
 
     with_server(key) do |server, cache_key|
-      logger.debug { "cas #{key} to #{server.inspect}: #{data.size}" } if logger
+      value = Marshal.dump value unless (raw == nil && @raw) || raw
+      logger.debug { "cas #{key} to #{server.inspect}: #{value.size}" } if logger
 
-      value = Marshal.dump updated unless raw
       data = value.to_s
       command = "cas #{cache_key} 0 #{expiry} #{value.size} #{token}#{noreply}\r\n#{value}\r\n"
 
@@ -736,9 +736,8 @@ class MemCache
     end
   end
 
-  def gets(key, raw = false)
+  def gets(key, raw = nil)
     with_server(key) do |server, cache_key|
-      logger.debug { "gets #{key} from #{server.inspect}: #{value ? value.to_s.size : 'nil'}" } if logger
       result = with_socket_management(server) do |socket|
         socket.write "gets #{cache_key}\r\n"
         keyline = socket.gets # "VALUE <key> <flags> <bytes> <cas token>\r\n"
@@ -758,9 +757,10 @@ class MemCache
         value = socket.read $1.to_i
         socket.read 2 # "\r\n"
         socket.gets   # "END\r\n"
+        logger.debug { "gets #{key} from #{server.inspect}: #{value ? value.to_s.size : 'nil'}" } if logger
         [value, $2]
       end
-      result[0] = Marshal.load result[0] unless raw
+      result[0] = Marshal.load result[0] unless (raw == nil && @raw) || raw
       result
     end
   rescue TypeError => err
