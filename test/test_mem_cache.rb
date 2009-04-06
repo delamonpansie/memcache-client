@@ -1189,7 +1189,8 @@ class TestMemCache < Test::Unit::TestCase
   def test_crazy_multithreaded_access
     requirement(memcached_running?, 'A real memcached server must be running for performance testing') do
 
-      cache = MemCache.new(['localhost:11211', '127.0.0.1:11211'])
+      # Use a null logger to verify logging doesn't blow up at runtime
+      cache = MemCache.new(['localhost:11211', '127.0.0.1:11211'], :logger => Logger.new('/dev/null'))
       cache.flush_all
       workers = []
 

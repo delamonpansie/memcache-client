@@ -1,8 +1,16 @@
-= 1.7.1
+= 1.7.1 (2009-03-28)
 
-* Performance optimization.  Rely on higher performance operating system socket timeouts for 
-  low-level socket read/writes where possible, instead of the (slower) SystemTimer or (slowest,
-  unreliable) Timeout libraries.
+* Performance optimizations: 
+  * Rely on higher performance operating system socket timeouts for low-level socket 
+    read/writes where possible, instead of the (slower) SystemTimer or (slowest,
+    unreliable) Timeout libraries.
+  * the native binary search is back!  The recent performance tuning made the binary search 
+    a bottleneck again so it had to return.  It uses RubyInline to compile the native extension and 
+    silently falls back to pure Ruby if anything fails.  Make sure you run:
+    `gem install RubyInline` if you want ultimate performance.
+  * the changes make memcache-client 100% faster than 1.7.0 in my performance test on Ruby 1.8.6: 
+    15 sec -> 8 sec.
+* Fix several logging issues.
 
 = 1.7.0 (2009-03-08)
 

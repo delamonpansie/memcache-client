@@ -1,6 +1,6 @@
 = memcache-client
 
-A pure ruby library for accessing memcached.
+A ruby library for accessing memcached.
 
 Source:
 
@@ -26,7 +26,8 @@ Or with multiple servers:
 == Tuning memcache-client
 
 The MemCache.new method takes a number of options which can be useful at times.  Please
-read the source comments there for an overview.
+read the source comments there for an overview.  If you are using Ruby 1.8.x and using
+multiple memcached servers, you should install the RubyInline gem for ultimate performance.
 
 
 == Using memcache-client with Rails

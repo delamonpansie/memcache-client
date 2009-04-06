@@ -347,12 +347,11 @@ class MemCache
     with_server(key) do |server, cache_key|
 
       value = Marshal.dump value unless  (raw == nil && @raw) || raw
-      data = value.to_s
-      logger.debug { "set #{key} to #{server.inspect}: #{data.size}" } if logger
+      logger.debug { "set #{key} to #{server.inspect}: #{value.to_s.size}" } if logger
 
-      raise MemCacheError, "Value too large, memcached can only store 1MB of data per key" if data.size > ONE_MB
+      raise MemCacheError, "Value too large, memcached can only store 1MB of data per key" if value.to_s.size > ONE_MB
 
-      command = "set #{cache_key} 0 #{expiry} #{data.size}#{noreply}\r\n#{data}\r\n"
+      command = "set #{cache_key} 0 #{expiry} #{value.to_s.size}#{noreply}\r\n#{value}\r\n"
 
       with_socket_management(server) do |socket|
         socket.write command
@@ -395,10 +394,8 @@ class MemCache
 
     with_server(key) do |server, cache_key|
       value = Marshal.dump value unless (raw == nil && @raw) || raw
-      logger.debug { "cas #{key} to #{server.inspect}: #{value.size}" } if logger
-
-      data = value.to_s
-      command = "cas #{cache_key} 0 #{expiry} #{value.size} #{token}#{noreply}\r\n#{value}\r\n"
+      logger.debug { "cas #{key} to #{server.inspect}: #{value.to_s.size}" } if logger
+      command = "cas #{cache_key} 0 #{expiry} #{value.to_s.size} #{token}#{noreply}\r\n#{value}\r\n"
 
       with_socket_management(server) do |socket|
         socket.write command
@@ -738,6 +735,7 @@ class MemCache
 
   def gets(key, raw = nil)
     with_server(key) do |server, cache_key|
+      logger.debug { "gets #{key} from #{server.inspect}" } if logger
       result = with_socket_management(server) do |socket|
         socket.write "gets #{cache_key}\r\n"
         keyline = socket.gets # "VALUE <key> <flags> <bytes> <cas token>\r\n"
