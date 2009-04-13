@@ -33,7 +33,7 @@ class MemCache
   ##
   # The version of MemCache you are using.
 
-  VERSION = '1.7.1.2'
+  VERSION = '1.7.2.3'
 
   ##
   # Default options for the cache object.
@@ -1020,30 +1020,30 @@ class MemCache
     end
 
     def connect_to(host, port, timeout=nil)
-      addr = Socket.getaddrinfo(host, nil)
-      sock = Socket.new(Socket.const_get(addr[0][0]), Socket::SOCK_STREAM, 0)
-
+      s = TCPSocket.new(host, port, 0)
       if timeout
-        secs = Integer(timeout)
-        usecs = Integer((timeout - secs) * 1_000_000)
-        optval = [secs, usecs].pack("l_2")
-        sock.setsockopt Socket::SOL_SOCKET, Socket::SO_RCVTIMEO, optval
-        sock.setsockopt Socket::SOL_SOCKET, Socket::SO_SNDTIMEO, optval
-
-        # Socket timeouts don't work for more complex IO operations
-        # like gets which lay on top of read.  We need to fall back to
-        # the standard Timeout mechanism.
-        sock.instance_eval <<-EOR
+        s.instance_eval <<-EOR
           alias :blocking_gets :gets
-          def gets
+          def gets(*args)
             MemCacheTimer.timeout(#{timeout}) do
-              self.blocking_gets
+              self.blocking_gets(*args)
+            end
+          end
+          alias :blocking_read :read
+          def read(*args)
+            MemCacheTimer.timeout(#{timeout}) do
+              self.blocking_read(*args)
+            end
+          end
+          alias :blocking_write :write
+          def write(*args)
+            MemCacheTimer.timeout(#{timeout}) do
+              self.blocking_write(*args)
             end
           end
         EOR
       end
-      sock.connect(Socket.pack_sockaddr_in(port, addr[0][3]))
-      sock
+      s
     end
 
     ##
