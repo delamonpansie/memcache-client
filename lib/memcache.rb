@@ -4,25 +4,7 @@ require 'socket'
 require 'thread'
 require 'zlib'
 require 'digest/sha1'
-
-begin
-  # Try to use the SystemTimer gem instead of Ruby's timeout library
-  # when running on something that looks like Ruby 1.8.x.  See:
-  #   http://ph7spot.com/articles/system_timer
-  # We don't want to bother trying to load SystemTimer on jruby and
-  # ruby 1.9+.
-  if !defined?(RUBY_ENGINE)
-    require 'system_timer'
-    MemCacheTimer = SystemTimer
-  else
-    require 'timeout'
-    MemCacheTimer = Timeout
-  end
-rescue LoadError => e
-  puts "[memcache-client] Could not load SystemTimer gem, falling back to Ruby's slower/unsafe timeout library: #{e.message}"
-  require 'timeout'
-  MemCacheTimer = Timeout
-end
+require 'net/protocol'
 
 ##
 # A Ruby client library for memcached.
@@ -33,7 +15,7 @@ class MemCache
   ##
   # The version of MemCache you are using.
 
-  VERSION = '1.7.2.3'
+  VERSION = '1.7.4.1'
 
   ##
   # Default options for the cache object.
@@ -534,7 +516,11 @@ class MemCache
       @servers.each do |server|
         with_socket_management(server) do |socket|
           logger.debug { "flush_all #{delay_time} on #{server}" } if logger
-          socket.write "flush_all #{delay_time}#{noreply}\r\n"
+          if delay == 0 # older versions of memcached will fail silently otherwise
+            socket.write "flush_all#{noreply}\r\n"
+          else
+            socket.write "flush_all #{delay_time}#{noreply}\r\n"
+          end
           break nil if @no_reply
           result = socket.gets
           raise_on_error_response! result
@@ -1020,30 +1006,9 @@ class MemCache
     end
 
     def connect_to(host, port, timeout=nil)
-      s = TCPSocket.new(host, port, 0)
-      if timeout
-        s.instance_eval <<-EOR
-          alias :blocking_gets :gets
-          def gets(*args)
-            MemCacheTimer.timeout(#{timeout}) do
-              self.blocking_gets(*args)
-            end
-          end
-          alias :blocking_read :read
-          def read(*args)
-            MemCacheTimer.timeout(#{timeout}) do
-              self.blocking_read(*args)
-            end
-          end
-          alias :blocking_write :write
-          def write(*args)
-            MemCacheTimer.timeout(#{timeout}) do
-              self.blocking_write(*args)
-            end
-          end
-        EOR
-      end
-      s
+      io = MemCache::BufferedIO.new(TCPSocket.new(host, port))
+      io.read_timeout = timeout
+      io
     end
 
     ##
@@ -1076,6 +1041,33 @@ class MemCache
   # Base MemCache exception class.
 
   class MemCacheError < RuntimeError; end
+
+  class BufferedIO < Net::BufferedIO # :nodoc:
+    BUFSIZE = 1024 * 16
+
+    # An implementation similar to this is in *trunk* for 1.9.  When it
+    # gets released, this method can be removed when using 1.9
+    def rbuf_fill
+      begin
+        @rbuf << @io.read_nonblock(BUFSIZE)
+      rescue Errno::EWOULDBLOCK
+        retry unless @read_timeout
+        if IO.select([@io], nil, nil, @read_timeout)
+          retry
+        else
+          raise Timeout::Error, 'IO timeout'
+        end
+      end
+    end
+
+    def setsockopt *args
+      @io.setsockopt *args
+    end
+
+    def gets
+      readuntil("\n")
+    end
+  end
 
 end
 
@@ -1116,5 +1108,6 @@ module Continuum
       "<#{value}, #{server.host}:#{server.port}>"
     end
   end
+
 end
 require 'continuum_native'

@@ -22,3 +22,10 @@ You can increase the timeout or disable them completely with the following confi
   native:
   MemCache.new ['server1', 'server2'], { :timeout => 1.0 } # 1 second timeout
 
+
+== The new memcache-client is slower than 1.5.0!?
+
+Yes, in the simplest case, 1.6.x+ is slower than 1.5.0.  If you just have a single memcached
+server, the latest memcache-client will be slower.  This is because 1.5.0 does not
+timeout network operations.  For reliability purposes, memcache-client 1.6.x+ enables 
+timeouts by default.  Most of this performance penalty is now gone in 1.7.3 and later.

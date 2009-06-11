@@ -139,8 +139,6 @@ class TestMemCache < Test::Unit::TestCase
         end
       end
       puts "1000 gets without socket timeout: #{without} sec"
-
-      assert without < with
     end
   end
 
@@ -1058,7 +1056,7 @@ class TestMemCache < Test::Unit::TestCase
 
     @cache.flush_all
 
-    expected = "flush_all 0\r\n"
+    expected = "flush_all\r\n"
     @cache.servers.each do |server|
       assert_equal expected, server.socket.written.string
     end
@@ -1092,7 +1090,19 @@ class TestMemCache < Test::Unit::TestCase
       @cache.flush_all
     end
 
-    assert_match /flush_all 0\r\n/, socket.written.string
+    assert_match /flush_all\r\n/, socket.written.string
+  end
+  
+  def test_flush_all_for_real
+    requirement(memcached_running?, 'A real memcached server must be running for testing flush_all') do
+      cache = MemCache.new "localhost:11211", :namespace => "test_flush_all"
+      k, v = "1234", "test"
+      assert_nil cache.get(k)
+      cache.set(k, v)
+      assert_equal v, cache.get(k)
+      cache.flush_all
+      assert_nil cache.get(k)
+    end
   end
 
   def test_stats

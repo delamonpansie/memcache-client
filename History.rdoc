@@ -1,3 +1,14 @@
+= 1.7.4 (2009-06-09)
+
+* Fix issue with raising timeout errors.
+
+= 1.7.3 (2009-06-06)
+
+* Remove SystemTimer support, refactor I/O to use nonblocking operations.  Speeds up
+  performance approx 100%. Timeouts basically have no overhead now!  (tenderlove)
+* Update load logic to support SystemTimer running in Ruby Enterprise Edition.  Thanks
+  to splattael on github for the comment.
+
 = 1.7.2 (2009-04-12)
 
 * Rollback socket timeout optimization.  It does not work on all operating systems
